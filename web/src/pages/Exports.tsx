@@ -15,9 +15,16 @@ import Heading from "@/components/ui/heading";
 import { Input } from "@/components/ui/input";
 import { Toaster } from "@/components/ui/sonner";
 import useKeyboardListener from "@/hooks/use-keyboard-listener";
-import { useOverlayState, useSearchEffect } from "@/hooks/use-overlay-state";
+import { useSearchEffect } from "@/hooks/use-overlay-state";
+import { useHistoryBack } from "@/hooks/use-history-back";
+import { useApiFilterArgs } from "@/hooks/use-api-filter";
 import { cn } from "@/lib/utils";
-import { DeleteClipType, Export, ExportCase } from "@/types/export";
+import {
+  DeleteClipType,
+  Export,
+  ExportCase,
+  ExportFilter,
+} from "@/types/export";
 import OptionAndInputDialog from "@/components/overlay/dialog/OptionAndInputDialog";
 import axios from "axios";
 
@@ -29,12 +36,16 @@ import {
   useRef,
   useState,
 } from "react";
-import { isMobile } from "react-device-detect";
+import { isMobile, isMobileOnly } from "react-device-detect";
 import { useTranslation } from "react-i18next";
 
 import { LuFolderX } from "react-icons/lu";
 import { toast } from "sonner";
 import useSWR from "swr";
+import ExportFilterGroup from "@/components/filter/ExportFilterGroup";
+
+// always parse these as string arrays
+const EXPORT_FILTER_ARRAY_KEYS = ["cameras"];
 
 function Exports() {
   const { t } = useTranslation(["views/exports"]);
@@ -43,15 +54,47 @@ function Exports() {
     document.title = t("documentTitle");
   }, [t]);
 
+  // Filters
+
+  const [exportFilter, setExportFilter, exportSearchParams] =
+    useApiFilterArgs<ExportFilter>(EXPORT_FILTER_ARRAY_KEYS);
+
   // Data
 
   const { data: cases, mutate: updateCases } = useSWR<ExportCase[]>("cases");
-  const { data: rawExports, mutate: updateExports } =
-    useSWR<Export[]>("exports");
+  const { data: rawExports, mutate: updateExports } = useSWR<Export[]>(
+    exportSearchParams && Object.keys(exportSearchParams).length > 0
+      ? ["exports", exportSearchParams]
+      : "exports",
+  );
+
+  const exportsByCase = useMemo<{ [caseId: string]: Export[] }>(() => {
+    const grouped: { [caseId: string]: Export[] } = {};
+    (rawExports ?? []).forEach((exp) => {
+      const caseId = exp.export_case || "none";
+      if (!grouped[caseId]) {
+        grouped[caseId] = [];
+      }
+
+      grouped[caseId].push(exp);
+    });
+    return grouped;
+  }, [rawExports]);
+
+  const filteredCases = useMemo<ExportCase[]>(() => {
+    if (!cases) {
+      return [];
+    }
+
+    return cases.filter((caseItem) => {
+      const caseExports = exportsByCase[caseItem.id];
+      return caseExports?.length;
+    });
+  }, [cases, exportsByCase]);
 
   const exports = useMemo<Export[]>(
-    () => (rawExports ?? []).filter((e) => !e.export_case),
-    [rawExports],
+    () => exportsByCase["none"] || [],
+    [exportsByCase],
   );
 
   const mutate = useCallback(() => {
@@ -66,26 +109,33 @@ function Exports() {
   // Viewing
 
   const [selected, setSelected] = useState<Export>();
-  const [selectedCaseId, setSelectedCaseId] = useOverlayState<
-    string | undefined
-  >("caseId", undefined);
+  const [selectedCaseId, setSelectedCaseId] = useState<string | undefined>(
+    undefined,
+  );
   const [selectedAspect, setSelectedAspect] = useState(0.0);
 
+  // Handle browser back button to deselect case before navigating away
+  useHistoryBack({
+    enabled: true,
+    open: selectedCaseId !== undefined,
+    onClose: () => setSelectedCaseId(undefined),
+  });
+
   useSearchEffect("id", (id) => {
-    if (!exports) {
+    if (!rawExports) {
       return false;
     }
 
-    setSelected(exports.find((exp) => exp.id == id));
+    setSelected(rawExports.find((exp) => exp.id == id));
     return true;
   });
 
   useSearchEffect("caseId", (caseId: string) => {
-    if (!cases) {
+    if (!filteredCases) {
       return false;
     }
 
-    const exists = cases.some((c) => c.id === caseId);
+    const exists = filteredCases.some((c) => c.id === caseId);
 
     if (!exists) {
       return false;
@@ -144,8 +194,8 @@ function Exports() {
   useKeyboardListener([], undefined, contentRef);
 
   const selectedCase = useMemo(
-    () => cases?.find((c) => c.id === selectedCaseId),
-    [cases, selectedCaseId],
+    () => filteredCases?.find((c) => c.id === selectedCaseId),
+    [filteredCases, selectedCaseId],
   );
 
   const resetCaseDialog = useCallback(() => {
@@ -232,22 +282,33 @@ function Exports() {
         </DialogContent>
       </Dialog>
 
-      {(exports?.length || cases?.length) && (
-        <div className="flex w-full items-center justify-center p-2">
+      <div
+        className={cn(
+          "flex w-full flex-col items-start space-y-2 pr-2 md:mb-2 lg:relative lg:h-10 lg:flex-row lg:items-center lg:space-y-0",
+          isMobileOnly && "mb-2 h-auto flex-wrap gap-2 space-y-0",
+        )}
+      >
+        <div className="w-full">
           <Input
-            className="text-md w-full bg-muted md:w-1/3"
+            className="text-md w-full bg-muted md:w-1/2"
             placeholder={t("search")}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-      )}
+        <ExportFilterGroup
+          className="w-full justify-between md:justify-start lg:justify-end"
+          filter={exportFilter}
+          filters={["cameras"]}
+          onUpdateFilter={setExportFilter}
+        />
+      </div>
 
       {selectedCase ? (
         <CaseView
           contentRef={contentRef}
           selectedCase={selectedCase}
-          exports={rawExports}
+          exports={exportsByCase[selectedCase.id] || []}
           search={search}
           setSelected={setSelected}
           renameClip={onHandleRename}
@@ -258,7 +319,7 @@ function Exports() {
         <AllExportsView
           contentRef={contentRef}
           search={search}
-          cases={cases}
+          cases={filteredCases}
           exports={exports}
           setSelectedCaseId={setSelectedCaseId}
           setSelected={setSelected}
@@ -428,8 +489,8 @@ function CaseView({
   }, [selectedCase, exports, search]);
 
   return (
-    <div className="flex size-full flex-col gap-8">
-      <div className="flex flex-col gap-1">
+    <div className="flex size-full flex-col gap-8 overflow-hidden">
+      <div className="flex shrink-0 flex-col gap-1">
         <Heading className="capitalize" as="h2">
           {selectedCase.name}
         </Heading>
@@ -439,7 +500,7 @@ function CaseView({
       </div>
       <div
         ref={contentRef}
-        className="scrollbar-container grid gap-2 overflow-y-auto sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+        className="scrollbar-container grid min-h-0 flex-1 content-start gap-2 overflow-y-auto sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
       >
         {exports?.map((item) => (
           <ExportCard
