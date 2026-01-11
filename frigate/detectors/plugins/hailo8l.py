@@ -50,8 +50,8 @@ DETECTOR_KEY = "hailo8l"
 ARCH = None
 H8_DEFAULT_MODEL = "yolov6n.hef"
 H8L_DEFAULT_MODEL = "yolov6n.hef"
-H8_DEFAULT_URL = "https://hailo-model-zoo.s3.eu-west-2.amazonaws.com/ModelZoo/Compiled/v2.14.0/hailo8/yolov6n.hef"
-H8L_DEFAULT_URL = "https://hailo-model-zoo.s3.eu-west-2.amazonaws.com/ModelZoo/Compiled/v2.14.0/hailo8l/yolov6n.hef"
+H8_DEFAULT_URL = "https://hailo-model-zoo.s3.eu-west-2.amazonaws.com/ModelZoo/Compiled/v2.17.0/hailo8/yolov6n.hef"
+H8L_DEFAULT_URL = "https://hailo-model-zoo.s3.eu-west-2.amazonaws.com/ModelZoo/Compiled/v2.17.0/hailo8l/yolov6n.hef"
 
 
 def detect_hailo_arch():
