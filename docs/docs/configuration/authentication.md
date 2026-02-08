@@ -168,7 +168,7 @@ In this example:
 
 **Note on matching semantics:**
 
-- Admin precedence: if the `admin` mapping matches , Frigate resolves the session to `admin` to avoid accidental downgrade when a user belongs to multiple groups (for example both admin and viewer groups).
+- Admin precedence: if the `admin` mapping matches, Frigate resolves the session to `admin` to avoid accidental downgrade when a user belongs to multiple groups (for example both `admin` and `viewer` groups).
 
 #### Port Considerations
 
